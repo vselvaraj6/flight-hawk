@@ -85,10 +85,10 @@ def start_scheduler():
     init_db()
     job()
     
-    # Schedule to run every 12 hours
-    schedule.every(12).hours.do(job)
+    # Schedule to run every 1 hour
+    schedule.every(1).hours.do(job)
     
-    logging.info("Scheduler activated. Listening for drops (Checking every 12 hours)...")
+    logging.info("Scheduler activated. Listening for drops (Checking every 1 hour)...")
     try:
         while True:
             schedule.run_pending()
