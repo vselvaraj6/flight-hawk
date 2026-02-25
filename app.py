@@ -3,7 +3,9 @@ import pandas as pd
 import json
 from database import (init_db, get_all_destinations, add_destination, get_connection,
                       get_setting, set_setting, create_user, authenticate_user, reset_password)
+from notifier import send_telegram_message
 import os
+import secrets
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -114,24 +116,52 @@ st.markdown("""
     /* Inputs */
     .stTextInput > div > div > input,
     .stNumberInput > div > div > input {
-        background: rgba(255, 255, 255, 0.05) !important;
-        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        background: rgba(30, 30, 60, 0.9) !important;
+        border: 1px solid rgba(99, 102, 241, 0.3) !important;
         border-radius: 10px !important;
-        color: #e0e0ff !important;
+        color: #ffffff !important;
         font-family: 'Inter', sans-serif !important;
+        font-size: 1rem !important;
+    }
+    .stTextInput > div > div > input::placeholder {
+        color: #8888aa !important;
+        opacity: 1 !important;
     }
     .stTextInput > div > div > input:focus,
     .stNumberInput > div > div > input:focus {
         border-color: #6366f1 !important;
-        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3) !important;
     }
 
     /* Selectbox */
     .stSelectbox > div > div {
-        background: rgba(255, 255, 255, 0.05) !important;
-        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        background: rgba(30, 30, 60, 0.9) !important;
+        border: 1px solid rgba(99, 102, 241, 0.3) !important;
         border-radius: 10px !important;
-        color: #e0e0ff !important;
+        color: #ffffff !important;
+    }
+    .stSelectbox > div > div > div {
+        color: #ffffff !important;
+    }
+
+    /* Date input */
+    .stDateInput > div > div > input {
+        background: rgba(30, 30, 60, 0.9) !important;
+        border: 1px solid rgba(99, 102, 241, 0.3) !important;
+        border-radius: 10px !important;
+        color: #ffffff !important;
+    }
+
+    /* Tabs styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 4px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        color: #9ca3af !important;
+        font-weight: 500;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #a78bfa !important;
     }
 
     /* Dataframe */
@@ -209,7 +239,41 @@ st.markdown("""
     footer { visibility: hidden; }
     header[data-testid="stHeader"] { display: none !important; }
     .stDeployButton { display: none !important; }
+
+    /* ============================================ */
+    /* MOBILE RESPONSIVE                            */
+    /* ============================================ */
+    @media (max-width: 768px) {
+        /* Tighter padding on mobile */
+        .block-container {
+            padding: 1rem 0.8rem !important;
+        }
+
+        /* Stack metric cards */
+        .metric-card {
+            padding: 16px !important;
+        }
+        .metric-value {
+            font-size: 1.6rem !important;
+        }
+        .metric-label {
+            font-size: 0.75rem !important;
+        }
+
+        /* Smaller headings */
+        h1 { font-size: 1.6rem !important; }
+        h2 { font-size: 1.2rem !important; }
+
+        /* Login page on mobile */
+        .login-title { font-size: 1.8rem !important; }
+
+        /* Table scrollable */
+        .stDataFrame > div {
+            overflow-x: auto !important;
+        }
+    }
 </style>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 """, unsafe_allow_html=True)
 
 def show_login():
@@ -236,8 +300,11 @@ def show_login():
                 if username and password:
                     ok, msg = authenticate_user(username, password)
                     if ok:
+                        token = secrets.token_hex(16)
+                        set_setting(f"session_{token}", username)
                         st.session_state["authenticated"] = True
                         st.session_state["username"] = username
+                        st.query_params["token"] = token
                         st.rerun()
                     else:
                         st.error(f"❌ {msg}")
@@ -327,54 +394,49 @@ def show_dashboard():
         """, unsafe_allow_html=True)
 
     st.write("")
-    st.write("")
 
-    # --- Sidebar: Add Destination ---
+    # --- Add Route (main area, visible on mobile) ---
+    with st.expander("➕ Add New Route", expanded=False):
+        st.markdown("<p style='font-size: 0.85rem; color: #9ca3af !important;'>Type to search by city or airport name</p>", unsafe_allow_html=True)
+
+        with st.form("add_destination_form"):
+            col_from, col_to = st.columns(2)
+            with col_from:
+                dep_selection = st.selectbox("From", options=[""] + AIRPORT_OPTIONS, index=0, placeholder="Type to search...")
+            with col_to:
+                dest_selection = st.selectbox("To", options=[""] + AIRPORT_OPTIONS, index=0, placeholder="Type to search...")
+
+            col_price, col_date1, col_date2 = st.columns([1, 1, 1])
+            with col_price:
+                target_price = st.number_input("Target Price ($)", min_value=1.0, value=500.0, step=10.0)
+            with col_date1:
+                date_from = st.date_input("Earliest date", value=None)
+            with col_date2:
+                date_to = st.date_input("Latest date", value=None)
+
+            submitted = st.form_submit_button("🛫 Start Tracking", use_container_width=True)
+
+            if submitted:
+                if dep_selection and dest_selection:
+                    dep_code = AIRPORT_CODE_MAP[dep_selection]
+                    dest_code = AIRPORT_CODE_MAP[dest_selection]
+                    d_from_str = date_from.strftime("%d/%m/%Y") if date_from else None
+                    d_to_str = date_to.strftime("%d/%m/%Y") if date_to else None
+                    add_destination(dep_code, dest_code, target_price, d_from_str, d_to_str)
+                    send_telegram_message(
+                        f"🦅 <b>New Route Added</b>\n\n"
+                        f"📍 {dep_code} ➡️ {dest_code}\n"
+                        f"💰 Target: <b>${target_price:,.0f}</b>\n"
+                        f"{f'📅 {d_from_str} — {d_to_str}' if d_from_str else '📅 Any date'}\n\n"
+                        f"FlightHawk is now tracking this route!"
+                    )
+                    st.success(f"Tracking {dep_selection} ➡️ {dest_selection} below ${target_price}")
+                    st.rerun()
+                else:
+                    st.error("Please select both airports.")
+
+    # --- Sidebar: Settings & Logout ---
     with st.sidebar:
-        st.markdown("""
-            <h2 style="margin-bottom: 4px;">➕ Add Route</h2>
-            <p style="font-size: 0.85rem; color: #9ca3af !important;">Type a city or airport name to search</p>
-        """, unsafe_allow_html=True)
-
-        # --- Search: From ---
-        dep_search = st.text_input("From", placeholder="e.g. Toronto, Reykjavik...", key="dep_search")
-        dep_filtered = [opt for opt in AIRPORT_OPTIONS if dep_search.lower() in opt.lower()] if dep_search else []
-        dep_selection = None
-        if dep_search and dep_filtered:
-            dep_selection = st.selectbox("Select departure", options=dep_filtered[:20], key="dep_select", label_visibility="collapsed")
-        elif dep_search and not dep_filtered:
-            st.caption("No airports found.")
-
-        # --- Search: To ---
-        dest_search = st.text_input("To", placeholder="e.g. London, Delhi...", key="dest_search")
-        dest_filtered = [opt for opt in AIRPORT_OPTIONS if dest_search.lower() in opt.lower()] if dest_search else []
-        dest_selection = None
-        if dest_search and dest_filtered:
-            dest_selection = st.selectbox("Select destination", options=dest_filtered[:20], key="dest_select", label_visibility="collapsed")
-        elif dest_search and not dest_filtered:
-            st.caption("No airports found.")
-
-        target_price = st.number_input("Target Price ($)", min_value=1.0, value=500.0, step=10.0)
-
-        st.markdown("<p style='font-size: 0.8rem; color: #9ca3af !important; margin-top: 12px;'>Date Range (optional)</p>", unsafe_allow_html=True)
-        date_from = st.date_input("Earliest", value=None)
-        date_to = st.date_input("Latest", value=None)
-
-        if st.button("🛫 Start Tracking", use_container_width=True):
-            if dep_selection and dest_selection:
-                dep_code = AIRPORT_CODE_MAP[dep_selection]
-                dest_code = AIRPORT_CODE_MAP[dest_selection]
-                d_from_str = date_from.strftime("%d/%m/%Y") if date_from else None
-                d_to_str = date_to.strftime("%d/%m/%Y") if date_to else None
-                add_destination(dep_code, dest_code, target_price, d_from_str, d_to_str)
-                st.success(f"Tracking {dep_selection} ➡️ {dest_selection} below ${target_price}")
-                st.rerun()
-            else:
-                st.error("Please search and select both airports.")
-
-        st.write("---")
-
-        # --- Sidebar: Settings ---
         st.markdown("<h2>⚙️ Settings</h2>", unsafe_allow_html=True)
 
         frequency_options = {
@@ -402,7 +464,11 @@ def show_dashboard():
 
         st.write("---")
         if st.button("🚪 Logout", use_container_width=True):
+            token = st.query_params.get("token")
+            if token:
+                set_setting(f"session_{token}", "")  # invalidate
             st.session_state["authenticated"] = False
+            st.query_params.clear()
             st.rerun()
 
     # --- Main: Tracked Flights ---
@@ -477,6 +543,16 @@ def show_dashboard():
 # ============================================================
 # MAIN ENTRY POINT
 # ============================================================
+
+# Check for session token in query params (persists across refresh)
+if not st.session_state.get("authenticated"):
+    token = st.query_params.get("token")
+    if token:
+        stored_user = get_setting(f"session_{token}")
+        if stored_user:
+            st.session_state["authenticated"] = True
+            st.session_state["username"] = stored_user
+
 if st.session_state.get("authenticated"):
     show_dashboard()
 else:
