@@ -333,32 +333,44 @@ def show_dashboard():
     with st.sidebar:
         st.markdown("""
             <h2 style="margin-bottom: 4px;">➕ Add Route</h2>
-            <p style="font-size: 0.85rem; color: #9ca3af !important;">Search by city or airport name</p>
+            <p style="font-size: 0.85rem; color: #9ca3af !important;">Type a city or airport name to search</p>
         """, unsafe_allow_html=True)
 
-        with st.form("add_destination_form"):
-            dep_selection = st.selectbox("From", options=[""] + AIRPORT_OPTIONS, index=0, placeholder="Type to search...")
-            dest_selection = st.selectbox("To", options=[""] + AIRPORT_OPTIONS, index=0, placeholder="Type to search...")
+        # --- Search: From ---
+        dep_search = st.text_input("From", placeholder="e.g. Toronto, Reykjavik...", key="dep_search")
+        dep_filtered = [opt for opt in AIRPORT_OPTIONS if dep_search.lower() in opt.lower()] if dep_search else []
+        dep_selection = None
+        if dep_search and dep_filtered:
+            dep_selection = st.selectbox("Select departure", options=dep_filtered[:20], key="dep_select", label_visibility="collapsed")
+        elif dep_search and not dep_filtered:
+            st.caption("No airports found.")
 
-            target_price = st.number_input("Target Price ($)", min_value=1.0, value=500.0, step=10.0)
+        # --- Search: To ---
+        dest_search = st.text_input("To", placeholder="e.g. London, Delhi...", key="dest_search")
+        dest_filtered = [opt for opt in AIRPORT_OPTIONS if dest_search.lower() in opt.lower()] if dest_search else []
+        dest_selection = None
+        if dest_search and dest_filtered:
+            dest_selection = st.selectbox("Select destination", options=dest_filtered[:20], key="dest_select", label_visibility="collapsed")
+        elif dest_search and not dest_filtered:
+            st.caption("No airports found.")
 
-            st.markdown("<p style='font-size: 0.8rem; color: #9ca3af !important; margin-top: 12px;'>Date Range (optional)</p>", unsafe_allow_html=True)
-            date_from = st.date_input("Earliest", value=None)
-            date_to = st.date_input("Latest", value=None)
+        target_price = st.number_input("Target Price ($)", min_value=1.0, value=500.0, step=10.0)
 
-            submitted = st.form_submit_button("🛫 Start Tracking")
+        st.markdown("<p style='font-size: 0.8rem; color: #9ca3af !important; margin-top: 12px;'>Date Range (optional)</p>", unsafe_allow_html=True)
+        date_from = st.date_input("Earliest", value=None)
+        date_to = st.date_input("Latest", value=None)
 
-            if submitted:
-                if dep_selection and dest_selection:
-                    dep_code = AIRPORT_CODE_MAP[dep_selection]
-                    dest_code = AIRPORT_CODE_MAP[dest_selection]
-                    d_from_str = date_from.strftime("%d/%m/%Y") if date_from else None
-                    d_to_str = date_to.strftime("%d/%m/%Y") if date_to else None
-                    add_destination(dep_code, dest_code, target_price, d_from_str, d_to_str)
-                    st.success(f"Tracking {dep_selection} ➡️ {dest_selection} below ${target_price}")
-                    st.rerun()
-                else:
-                    st.error("Please provide both codes.")
+        if st.button("🛫 Start Tracking", use_container_width=True):
+            if dep_selection and dest_selection:
+                dep_code = AIRPORT_CODE_MAP[dep_selection]
+                dest_code = AIRPORT_CODE_MAP[dest_selection]
+                d_from_str = date_from.strftime("%d/%m/%Y") if date_from else None
+                d_to_str = date_to.strftime("%d/%m/%Y") if date_to else None
+                add_destination(dep_code, dest_code, target_price, d_from_str, d_to_str)
+                st.success(f"Tracking {dep_selection} ➡️ {dest_selection} below ${target_price}")
+                st.rerun()
+            else:
+                st.error("Please search and select both airports.")
 
         st.write("---")
 
