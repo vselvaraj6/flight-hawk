@@ -21,17 +21,31 @@ def send_telegram_message(message_text):
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": message_text,
-        "parse_mode": "HTML",  # Allows basic formatting like <b>bold</b> and links
+        "parse_mode": "HTML",
         "disable_web_page_preview": False
     }
 
     try:
         response = requests.post(url, json=payload, timeout=10)
+        if response.status_code == 400:
+            # HTML parse error — retry without parse_mode
+            print(f"Telegram HTML parse error: {response.text}")
+            print("Retrying without HTML formatting...")
+            import re
+            plain_text = re.sub(r'<[^>]+>', '', message_text)
+            payload_plain = {
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": plain_text,
+                "disable_web_page_preview": False
+            }
+            response = requests.post(url, json=payload_plain, timeout=10)
         response.raise_for_status()
         print("Telegram notification sent successfully.")
         return True
     except requests.exceptions.RequestException as e:
         print(f"Error sending Telegram message: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response body: {e.response.text}")
         return False
 
 if __name__ == "__main__":

@@ -143,6 +143,32 @@ st.markdown("""
     .stSelectbox > div > div > div {
         color: #ffffff !important;
     }
+    /* Selectbox search input text */
+    .stSelectbox input {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        caret-color: #ffffff !important;
+    }
+    .stSelectbox input::placeholder {
+        color: #8888aa !important;
+        -webkit-text-fill-color: #8888aa !important;
+        opacity: 1 !important;
+    }
+    /* Selectbox dropdown menu items */
+    [data-baseweb="menu"] {
+        background: rgba(20, 20, 50, 0.98) !important;
+    }
+    [data-baseweb="menu"] li {
+        color: #ffffff !important;
+    }
+    [data-baseweb="menu"] li:hover {
+        background: rgba(99, 102, 241, 0.3) !important;
+    }
+    /* Selected option text */
+    .stSelectbox [data-baseweb="select"] span {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
 
     /* Date input */
     .stDateInput > div > div > input {
