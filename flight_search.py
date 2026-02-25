@@ -26,7 +26,7 @@ def get_amadeus_token():
     }
     
     try:
-        response = requests.post(url, headers=headers, data=data)
+        response = requests.post(url, headers=headers, data=data, timeout=10)
         response.raise_for_status()
         return response.json().get("access_token")
     except requests.exceptions.RequestException as e:

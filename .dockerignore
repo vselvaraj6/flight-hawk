@@ -1,6 +1,8 @@
 venv/
 __pycache__/
-.env
-*.db
-*.log
+*.pyc
+flights.db
 data/
+.git/
+.env
+*.log

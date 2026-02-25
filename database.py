@@ -1,7 +1,9 @@
 import sqlite3
 import os
 
-DB_PATH = 'flights.db'
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, 'flights.db')
 
 def get_connection():
     return sqlite3.connect(DB_PATH)
@@ -35,6 +37,19 @@ def init_db():
             checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(destination_id) REFERENCES destinations(id)
         )
+    ''')
+    
+    # Settings table for app configuration
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    ''')
+    
+    # Set default check frequency to 60 minutes if not already set
+    c.execute('''
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('check_frequency_minutes', '60')
     ''')
     
     conn.commit()
@@ -72,6 +87,23 @@ def update_lowest_price(destination_id, new_lowest_price):
         SET lowest_price_seen = ? 
         WHERE id = ?
     ''', (new_lowest_price, destination_id))
+    conn.commit()
+    conn.close()
+
+def get_setting(key):
+    """Gets a setting value by key."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT value FROM settings WHERE key = ?', (key,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def set_setting(key, value):
+    """Sets a setting value (creates or updates)."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, str(value)))
     conn.commit()
     conn.close()
 
