@@ -1,13 +1,21 @@
 import streamlit as st
 import pandas as pd
-from database import init_db, get_all_destinations, add_destination, get_connection, get_setting, set_setting
+import json
+from database import (init_db, get_all_destinations, add_destination, get_connection,
+                      get_setting, set_setting, create_user, authenticate_user, reset_password)
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# Load airport data
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'airports.json'), 'r') as f:
+    AIRPORTS = json.load(f)
+AIRPORT_OPTIONS = [f"{a['city']} - {a['name']} ({a['code']})" for a in AIRPORTS]
+AIRPORT_CODE_MAP = {f"{a['city']} - {a['name']} ({a['code']})": a['code'] for a in AIRPORTS}
+
 # --- Page Config ---
-st.set_page_config(page_title="Flight Price Tracker", page_icon="✈️", layout="wide")
+st.set_page_config(page_title="FlightHawk", page_icon="🦅", layout="wide")
 init_db()
 
 # --- Custom CSS ---
@@ -199,8 +207,79 @@ st.markdown("""
     /* Hide Streamlit branding */
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
+    header[data-testid="stHeader"] { display: none !important; }
+    .stDeployButton { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
+
+def show_login():
+    """Login / Sign Up / Forgot Password screen."""
+    st.markdown("""
+        <div style="max-width: 420px; margin: 40px auto; text-align: center;">
+            <div style="font-size: 3.5rem; margin-bottom: 8px;">🦅</div>
+            <div style="font-size: 2.2rem; font-weight: 800;
+                background: linear-gradient(135deg, #818cf8, #a78bfa, #c084fc);
+                -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                margin-bottom: 4px;">FlightHawk</div>
+            <p style="color: #9ca3af !important; margin-bottom: 24px;">Track flight prices & get notified</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 1.8, 1])
+    with col2:
+        tab_login, tab_signup, tab_reset = st.tabs(["🔓 Login", "📝 Sign Up", "🔑 Reset Password"])
+
+        with tab_login:
+            username = st.text_input("Username", placeholder="Enter username", key="login_user")
+            password = st.text_input("Password", type="password", placeholder="Enter password", key="login_pass")
+            if st.button("🔓 Login", use_container_width=True, key="login_btn"):
+                if username and password:
+                    ok, msg = authenticate_user(username, password)
+                    if ok:
+                        st.session_state["authenticated"] = True
+                        st.session_state["username"] = username
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")
+                else:
+                    st.warning("Please enter both username and password.")
+
+        with tab_signup:
+            new_user = st.text_input("Choose a username", placeholder="e.g. john", key="signup_user")
+            new_pass = st.text_input("Choose a password", type="password", placeholder="Min 4 characters", key="signup_pass")
+            confirm_pass = st.text_input("Confirm password", type="password", placeholder="Re-enter password", key="signup_confirm")
+            if st.button("📝 Create Account", use_container_width=True, key="signup_btn"):
+                if not new_user or not new_pass:
+                    st.warning("Please fill in all fields.")
+                elif len(new_pass) < 4:
+                    st.warning("Password must be at least 4 characters.")
+                elif new_pass != confirm_pass:
+                    st.error("❌ Passwords don't match.")
+                else:
+                    ok, msg = create_user(new_user, new_pass)
+                    if ok:
+                        st.success(f"✅ {msg} You can now log in.")
+                    else:
+                        st.error(f"❌ {msg}")
+
+        with tab_reset:
+            reset_user = st.text_input("Your username", placeholder="Enter username", key="reset_user")
+            admin_key = st.text_input("Admin key", type="password", placeholder="Ask admin for the key", key="admin_key")
+            new_password = st.text_input("New password", type="password", placeholder="Min 4 characters", key="reset_new_pass")
+            if st.button("🔑 Reset Password", use_container_width=True, key="reset_btn"):
+                app_password = os.environ.get("APP_PASSWORD", "flighthawk")
+                if admin_key != app_password:
+                    st.error("❌ Invalid admin key. Contact the admin.")
+                elif not reset_user or not new_password:
+                    st.warning("Please fill in all fields.")
+                elif len(new_password) < 4:
+                    st.warning("Password must be at least 4 characters.")
+                else:
+                    ok, msg = reset_password(reset_user, new_password)
+                    if ok:
+                        st.success(f"✅ {msg} You can now log in.")
+                    else:
+                        st.error(f"❌ {msg}")
 
 
 def show_dashboard():
@@ -208,7 +287,7 @@ def show_dashboard():
 
     # --- Header ---
     st.markdown("""
-        <h1 style="margin-bottom: 0;">✈️ Flight Price Tracker</h1>
+        <h1 style="margin-bottom: 0;">🦅 FlightHawk</h1>
         <p style="font-size: 1.05rem; color: #9ca3af !important; margin-top: 4px;">
             Monitor prices & get notified via Telegram when they drop
         </p>
@@ -254,15 +333,12 @@ def show_dashboard():
     with st.sidebar:
         st.markdown("""
             <h2 style="margin-bottom: 4px;">➕ Add Route</h2>
-            <p style="font-size: 0.85rem; color: #9ca3af !important;">Enter IATA codes (e.g. YYZ, DEL, JFK)</p>
+            <p style="font-size: 0.85rem; color: #9ca3af !important;">Search by city or airport name</p>
         """, unsafe_allow_html=True)
 
         with st.form("add_destination_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                dep_code = st.text_input("From", max_chars=3, placeholder="YYZ").upper()
-            with col2:
-                dest_code = st.text_input("To", max_chars=3, placeholder="DEL").upper()
+            dep_selection = st.selectbox("From", options=[""] + AIRPORT_OPTIONS, index=0, placeholder="Type to search...")
+            dest_selection = st.selectbox("To", options=[""] + AIRPORT_OPTIONS, index=0, placeholder="Type to search...")
 
             target_price = st.number_input("Target Price ($)", min_value=1.0, value=500.0, step=10.0)
 
@@ -273,11 +349,13 @@ def show_dashboard():
             submitted = st.form_submit_button("🛫 Start Tracking")
 
             if submitted:
-                if dep_code and dest_code:
+                if dep_selection and dest_selection:
+                    dep_code = AIRPORT_CODE_MAP[dep_selection]
+                    dest_code = AIRPORT_CODE_MAP[dest_selection]
                     d_from_str = date_from.strftime("%d/%m/%Y") if date_from else None
                     d_to_str = date_to.strftime("%d/%m/%Y") if date_to else None
                     add_destination(dep_code, dest_code, target_price, d_from_str, d_to_str)
-                    st.success(f"Tracking {dep_code} ➡️ {dest_code} below ${target_price}")
+                    st.success(f"Tracking {dep_selection} ➡️ {dest_selection} below ${target_price}")
                     st.rerun()
                 else:
                     st.error("Please provide both codes.")
@@ -308,6 +386,11 @@ def show_dashboard():
         if frequency_options[selected_freq] != current_freq:
             set_setting('check_frequency_minutes', frequency_options[selected_freq])
             st.success(f"✅ Updated to {selected_freq}")
+            st.rerun()
+
+        st.write("---")
+        if st.button("🚪 Logout", use_container_width=True):
+            st.session_state["authenticated"] = False
             st.rerun()
 
     # --- Main: Tracked Flights ---
@@ -376,10 +459,13 @@ def show_dashboard():
         else:
             st.markdown('<p><span class="status-dot red"></span> Telegram bot token missing</p>', unsafe_allow_html=True)
 
-    st.caption("Run `python main.py` in a separate terminal to keep the background price checker active.")
+
 
 
 # ============================================================
 # MAIN ENTRY POINT
 # ============================================================
-show_dashboard()
+if st.session_state.get("authenticated"):
+    show_dashboard()
+else:
+    show_login()

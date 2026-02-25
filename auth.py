@@ -26,7 +26,7 @@ def send_otp_via_telegram(otp_code):
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     msg = (
-        f"🔐 <b>Flight Tracker Login OTP</b>\n\n"
+        f"🔐 <b>FlightHawk Login OTP</b>\n\n"
         f"Your one-time password is:\n\n"
         f"<code>{otp_code}</code>\n\n"
         f"This code expires in 5 minutes. Do not share it with anyone."

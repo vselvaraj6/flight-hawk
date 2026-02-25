@@ -1,5 +1,7 @@
 import sqlite3
 import os
+import hashlib
+import secrets
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -8,12 +10,18 @@ DB_PATH = os.path.join(DATA_DIR, 'flights.db')
 def get_connection():
     return sqlite3.connect(DB_PATH)
 
+def _hash_password(password, salt=None):
+    """Hash a password with a salt using SHA-256."""
+    if salt is None:
+        salt = secrets.token_hex(16)
+    hashed = hashlib.sha256((salt + password).encode()).hexdigest()
+    return salt, hashed
+
 def init_db():
     """Initializes the database schema if it does not exist."""
     conn = get_connection()
     c = conn.cursor()
     
-    # Table to store user's desired destinations and flight configurations
     c.execute('''
         CREATE TABLE IF NOT EXISTS destinations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,7 +36,6 @@ def init_db():
         )
     ''')
     
-    # Optional: Table to store flight history if we want to visualize trends
     c.execute('''
         CREATE TABLE IF NOT EXISTS price_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,7 +46,6 @@ def init_db():
         )
     ''')
     
-    # Settings table for app configuration
     c.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -47,7 +53,16 @@ def init_db():
         )
     ''')
     
-    # Set default check frequency to 60 minutes if not already set
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            password_salt TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
     c.execute('''
         INSERT OR IGNORE INTO settings (key, value) VALUES ('check_frequency_minutes', '60')
     ''')
@@ -70,7 +85,6 @@ def add_destination(dep_code, dest_code, target_price, date_from=None, date_to=N
 def get_all_destinations():
     """Fetches all tracked destinations."""
     conn = get_connection()
-    # Return rows as dictionaries for easier usage
     conn.row_factory = sqlite3.Row 
     c = conn.cursor()
     c.execute('SELECT * FROM destinations')
@@ -79,14 +93,11 @@ def get_all_destinations():
     return [dict(row) for row in rows]
 
 def update_lowest_price(destination_id, new_lowest_price):
-    """Updates the lowest price seen history to prevent duplicate notifications."""
+    """Updates the lowest price seen."""
     conn = get_connection()
     c = conn.cursor()
-    c.execute('''
-        UPDATE destinations 
-        SET lowest_price_seen = ? 
-        WHERE id = ?
-    ''', (new_lowest_price, destination_id))
+    c.execute('UPDATE destinations SET lowest_price_seen = ? WHERE id = ?',
+              (new_lowest_price, destination_id))
     conn.commit()
     conn.close()
 
@@ -106,6 +117,60 @@ def set_setting(key, value):
     c.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, str(value)))
     conn.commit()
     conn.close()
+
+# ============================================================
+# USER MANAGEMENT
+# ============================================================
+
+def user_exists(username):
+    """Check if a username is already taken."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT id FROM users WHERE username = ?', (username.lower(),))
+    exists = c.fetchone() is not None
+    conn.close()
+    return exists
+
+def create_user(username, password):
+    """Create a new user with a hashed password. Returns (success, message)."""
+    if user_exists(username):
+        return False, "Username already taken."
+    salt, hashed = _hash_password(password)
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('INSERT INTO users (username, password_hash, password_salt) VALUES (?, ?, ?)',
+              (username.lower(), hashed, salt))
+    conn.commit()
+    conn.close()
+    return True, "Account created!"
+
+def authenticate_user(username, password):
+    """Verify username/password. Returns (success, message)."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT password_hash, password_salt FROM users WHERE username = ?', (username.lower(),))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return False, "User not found."
+    stored_hash, salt = row
+    _, input_hash = _hash_password(password, salt)
+    if input_hash == stored_hash:
+        return True, "Login successful!"
+    return False, "Incorrect password."
+
+def reset_password(username, new_password):
+    """Reset a user's password. Returns (success, message)."""
+    if not user_exists(username):
+        return False, "User not found."
+    salt, hashed = _hash_password(new_password)
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('UPDATE users SET password_hash = ?, password_salt = ? WHERE username = ?',
+              (hashed, salt, username.lower()))
+    conn.commit()
+    conn.close()
+    return True, "Password reset successfully!"
 
 if __name__ == "__main__":
     init_db()

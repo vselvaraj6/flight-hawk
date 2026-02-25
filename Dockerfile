@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app code
 COPY *.py ./
+COPY airports.json .
 
 # Expose Streamlit port
 EXPOSE 8501
